@@ -29,9 +29,10 @@ Các lệnh triển khai ở trên là hướng dẫn; bản đóng gói này ch
 1. Mở link HTTPS bằng Chrome trên Android.
 2. Bật nguồn mạch và Bluetooth điện thoại.
 3. Nhấn **Kết nối thiết bị**, chọn **VieGrand-Sensor**.
-4. Đặt ngón tay ổn định trên MAX30102 để đọc BPM.
-5. Cài đặt → Cài đặt wecare (hoặc Chrome ⋮ → Thêm vào màn hình chính).
-6. Nút góc trên bên phải bật toàn màn hình trên trình duyệt hỗ trợ.
+4. Giữ cảm biến ở tư thế chuẩn, mở **Đặt gốc** và nhấn **Ghi tư thế hiện tại** để đặt tọa độ tương đối về 0, 0, 0.
+5. Đặt ngón tay ổn định trên MAX30102 để đọc BPM.
+6. Cài đặt → Cài đặt wecare (hoặc Chrome ⋮ → Thêm vào màn hình chính).
+7. Nút góc trên bên phải bật toàn màn hình trên trình duyệt hỗ trợ.
 
 iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được hỗ trợ trực tiếp trong Chrome/Safari trên iOS. Ứng dụng hiển thị hướng dẫn khi trình duyệt thiếu tính năng. Giữ trang đang mở khi đo; không bảo đảm nhận BLE khi chạy nền hoặc khóa màn hình.
 
@@ -39,6 +40,7 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 
 - Màn hình chào WeCare với biểu tượng vector lấy cảm hứng từ ảnh mẫu.
 - Tổng quan: nhịp tim, gia tốc X/Y/Z, độ lớn gia tốc, IR, mô hình nghiêng 3D bằng CSS.
+- Đặt và lưu tư thế gốc; hiển thị gia tốc, pitch và roll tương đối, đồng thời hiệu chỉnh mô hình 3D theo mốc đã lưu.
 - Biểu đồ 60 giây, thống kê, xuất CSV có cột nguồn dữ liệu và loại gói.
 - Demo được ghi nhãn rõ; không tự bật khi kết nối thất bại.
 - Giao diện cài được ra màn hình chính, có service worker lưu giao diện ngoại tuyến.

@@ -1,7 +1,7 @@
 // Runs the actual application BLE functions with a minimal transport/UI harness.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('public/app.js','utf8');
-const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected'];
+const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','orientation','relativeMotion'];
 const connectStart=source.indexOf('async function connectSensor(){'),connectEnd=source.indexOf("\ndocument.querySelectorAll('.connect-action')",connectStart);
 const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(connectStart,connectEnd);
 const controls={};const context={Date,Math,Number,String,TextDecoder,Uint8Array,Event,EventTarget,console,setTimeout,clearTimeout};vm.createContext(context);
@@ -19,6 +19,7 @@ run(`state.mode='connected';state.source='BLE';`);
 assert.equal(run("ingest('bpm','78')"),true);
 assert.equal(run("ingest('accel','0.12,-0.35,9.76')"),true);
 assert.equal(run('state.accel[2]'),9.76);
+run(`const originAccel=[.12,-.35,9.76],originAngle=orientation(originAccel),origin={accel:originAccel,...originAngle};`);assert.equal(run('relativeMotion(originAccel,origin).accel.every(value=>value===0)'),true);assert.equal(run('relativeMotion([1.12,-.35,9.76],origin).accel[0]'),1);
 run("ingest('ir','85432')");assert.equal(run('state.records.length'),3);
 run("state.last.bpm=Date.now()-5000;ingest('ir','85500')");assert.equal(run('state.records.at(-1).bpm'),null);
 run("ingest('accel','ERR')");assert.equal(run('state.accel'),null);
@@ -34,5 +35,5 @@ await run('connectSensor()');assert.equal(run('state.mode'),'connected');run('di
 run(`let transientAttempts=0;d.gatt.connect=async()=>{transientAttempts++;if(transientAttempts<3)throw Error('Connection attempt failed');return controls.connectOk()}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('transientAttempts'),3);run('disconnect()');run('d.gatt.connect=controls.connectOk');
 run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('d.gatt.connected'),true);assert.equal(run('state.bindings.length'),2);assert.match(run('controls.notice'),/gia tốc/);run('disconnect()');
 run(`chars[UUID.bpm].startNotifications=chars[UUID.ir].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);assert.match(run('controls.notice'),/Không có kênh dữ liệu tương thích/);
-console.log('PASS: BLE UUIDs; payload validation; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
+console.log('PASS: BLE UUIDs; payload validation; relative origin coordinates; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
 })().catch(e=>{console.error(e);process.exit(1)});

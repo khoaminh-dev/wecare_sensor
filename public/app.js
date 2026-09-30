@@ -1,11 +1,13 @@
 'use strict';
 const UUID={service:'37af0000-39a2-4fce-9c60-01ee00000000',bpm:'37af0001-39a2-4fce-9c60-01ee00000000',accel:'37af0002-39a2-4fce-9c60-01ee00000000',ir:'37af0003-39a2-4fce-9c60-01ee00000000'};
 const $=id=>document.getElementById(id),decoder=new TextDecoder();
-const state={mode:'offline',source:null,device:null,bindings:[],epoch:0,timer:null,started:0,bpm:null,accel:null,ir:null,last:{bpm:0,accel:0,ir:0},samples:{bpm:[],accel:[],ir:[]},records:[],chart:'bpm',drawPending:false,wake:null,install:null};
-const navigation=[['home','home','Tổng quan'],['trends','chart','Biểu đồ'],['device','device','Thiết bị'],['settings','settings','Cài đặt']];
+const state={mode:'offline',source:null,device:null,bindings:[],epoch:0,timer:null,started:0,bpm:null,accel:null,ir:null,last:{bpm:0,accel:0,ir:0},samples:{bpm:[],accel:[],ir:[]},records:[],chart:'bpm',drawPending:false,wake:null,install:null,origin:null};
+const navigation=[['home','home','Tổng quan'],['trends','chart','Biểu đồ'],['device','device','Thiết bị'],['origin','origin','Đặt gốc'],['settings','settings','Cài đặt']];
 for(const nav of document.querySelectorAll('.side-nav,.bottom-nav'))nav.innerHTML=navigation.map(([id,icon,title])=>`<a class="nav-item" href="#${id}" data-page="${id}"><svg><use href="#i-${icon}"/></svg><span>${title}</span></a>`).join('');
 function storageGet(key){try{return localStorage.getItem(key)}catch{return null}}
 function storageSet(key,val){try{localStorage.setItem(key,val)}catch{}}
+function storageRemove(key){try{localStorage.removeItem(key)}catch{}}
+try{const saved=JSON.parse(storageGet('wecare-origin'));if(Array.isArray(saved?.accel)&&saved.accel.length===3&&saved.accel.every(Number.isFinite)&&Number.isFinite(saved.pitch)&&Number.isFinite(saved.roll))state.origin=saved;}catch{}
 function openApp(){ $('welcome').hidden=true;$('app').hidden=false;storageSet('wecare-welcome','seen');route(); }
 function route(){let page=location.hash.slice(1);if(!navigation.some(n=>n[0]===page))page='home';document.querySelectorAll('.page').forEach(el=>{el.hidden=el.id!==page;el.classList.toggle('active',el.id===page)});document.querySelectorAll('a.nav-item').forEach(el=>{let active=el.dataset.page===page;el.classList.toggle('active',active);if(active)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current')});scheduleDraw();window.scrollTo({top:0,behavior:'instant'});}
 window.addEventListener('hashchange',route);
@@ -25,6 +27,28 @@ function resetData(){state.bpm=state.accel=state.ir=null;state.last={bpm:0,accel
 function fresh(type,now=Date.now()){return (state.mode==='demo'||state.mode==='connected'||state.mode==='connecting')&&!!state.last[type]&&now-state.last[type]<3500;}
 function fmt(n,digits=2){return Number.isFinite(n)?n.toFixed(digits):'--';}
 function renderValues(){const validB=fresh('bpm'),validA=fresh('accel'),validI=fresh('ir');$('bpm').textContent=validB&&state.bpm!==null?state.bpm:'--';$('bpmNote').textContent=validB&&state.bpm!==null?'Đã nhận số đo':'Chưa có số đo';$('heartHint').textContent=state.last.bpm&&!validB?'Tín hiệu gián đoạn':validB&&state.bpm!==null?'Nhịp tim từ cảm biến':'Đặt ngón tay nhẹ lên cảm biến';const acc=validA?state.accel:null;['ax','ay','az'].forEach((id,i)=>$(id).textContent=fmt(acc?.[i]));const mag=acc?Math.hypot(...acc):null;$('magnitude').textContent=fmt(mag);$('gravity').textContent=fmt(mag===null?null:mag/9.80665)+' g';if(acc){const [x,y,z]=acc,pitch=Math.atan2(x,Math.hypot(y,z))*180/Math.PI,roll=Math.atan2(-y,z)*180/Math.PI;$('pitch').textContent=fmt(pitch,1)+'°';$('roll').textContent=fmt(roll,1)+'°';$('sensor3d').style.transform=`rotateX(${40+Math.max(-60,Math.min(60,roll))*.55}deg) rotateY(${pitch*.6}deg) rotateZ(-30deg)`;}else{$('pitch').textContent=$('roll').textContent='--°';}$('sensor3d').classList.toggle('stale',!validA);$('ir').textContent=validI&&state.ir!==null?state.ir.toLocaleString('vi-VN'):'--';$('irHint').textContent=state.last.ir&&!validI?'Tín hiệu gián đoạn':validI?'Cường độ ánh sáng phản xạ · IR raw':'Tín hiệu quang học từ MAX30102';const recent=state.samples.accel.slice(-12).filter(p=>p.v!==null).map(p=>Math.hypot(...p.v));$('motionHint').textContent=!validA?'Đang chờ cảm biến':recent.length>1&&Math.max(...recent)-Math.min(...recent)>2?'Gia tốc đang biến thiên':'Gia tốc biến thiên thấp';const last=Math.max(...Object.values(state.last));$('updated').textContent=last&&Date.now()-last<3500&&(state.mode==='demo'||state.mode==='connected')?(state.mode==='demo'?'Mô phỏng · ':'')+'Vừa cập nhật':state.mode==='connected'?'Đang chờ tín hiệu':'Chờ kết nối';$('recordCount').textContent=state.records.length.toLocaleString('vi-VN');$('sourceLabel').textContent=state.source==='SIMULATED'?'DEMO · Dữ liệu mô phỏng':state.source==='BLE'?'Bluetooth · Cảm biến thật':'Chưa có dữ liệu';}
+function orientation(accel){const [x,y,z]=accel;return{pitch:Math.atan2(x,Math.hypot(y,z))*180/Math.PI,roll:Math.atan2(-y,z)*180/Math.PI}}
+function relativeMotion(accel,origin){if(!accel||!origin)return null;const angle=orientation(accel),clean=(value,deadband)=>Math.abs(value)<deadband?0:value,wrap=value=>((value+180)%360+360)%360-180;return{accel:accel.map((value,index)=>clean(value-origin.accel[index],.03)),pitch:clean(wrap(angle.pitch-origin.pitch),.3),roll:clean(wrap(angle.roll-origin.roll),.3)}}
+function sensorTransform(pitch,roll){return`rotateX(${40+Math.max(-60,Math.min(60,roll))*.55}deg) rotateY(${Math.max(-90,Math.min(90,pitch))*.6}deg) rotateZ(-30deg)`}
+function renderOrigin(){
+const live=fresh('accel')?state.accel:null,relative=relativeMotion(live,state.origin),angle=live?orientation(live):null;
+['relativeX','relativeY','relativeZ'].forEach((id,index)=>$(id).textContent=relative?fmt(relative.accel[index]):'--');
+$('relativePitch').textContent=relative?fmt(relative.pitch,1)+'°':'--°';$('relativeRoll').textContent=relative?fmt(relative.roll,1)+'°':'--°';
+$('originStatus').textContent=state.origin?'MỐC ĐÃ LƯU':'CHƯA CÓ MỐC';$('originStatus').className='origin-status '+(state.origin?'ready':'');
+$('originSaved').textContent=state.origin?.savedAt?`Đã ghi ${new Date(state.origin.savedAt).toLocaleString('vi-VN')}`:'Tọa độ tương đối đang chờ mốc chuẩn.';
+$('setOrigin').disabled=state.mode!=='connected'||!live;$('clearOrigin').hidden=!state.origin;
+const shown=relative||angle,transform=shown?sensorTransform(shown.pitch,shown.roll):'rotateX(40deg) rotateZ(-30deg)';
+$('originSensor3d').style.transform=transform;$('originSensor3d').classList.toggle('stale',!live);
+if(relative){$('pitch').textContent=fmt(relative.pitch,1)+'°';$('roll').textContent=fmt(relative.roll,1)+'°';$('sensor3d').style.transform=transform;}
+}
+const renderSensorValues=renderValues;renderValues=function(){renderSensorValues();renderOrigin();};
+function captureOrigin(){
+if(state.mode!=='connected'||!fresh('accel')){toast('Kết nối cảm biến và chờ dữ liệu gia tốc trước khi ghi mốc.');return;}
+const cutoff=Date.now()-1200,points=state.samples.accel.filter(point=>point.ts>=cutoff&&Array.isArray(point.v));
+const source=points.length?points.map(point=>point.v):[state.accel],accel=[0,1,2].map(index=>source.reduce((sum,value)=>sum+value[index],0)/source.length),angle=orientation(accel);
+state.origin={accel,pitch:angle.pitch,roll:angle.roll,savedAt:Date.now()};storageSet('wecare-origin',JSON.stringify(state.origin));renderValues();toast('Đã ghi tư thế hiện tại làm gốc 0, 0, 0.');log('Đã cập nhật mốc tọa độ chuyển động.');
+}
+function clearOrigin(){state.origin=null;storageRemove('wecare-origin');renderValues();toast('Đã xóa mốc tọa độ.');log('Đã xóa mốc tọa độ chuyển động.');}
 function parsePayload(type,text){const s=text.trim();if(type==='accel'){const a=s.split(',');if(a.length!==3||a.some(x=>!/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(x.trim())))return undefined;const v=a.map(Number);return v.every(x=>Number.isFinite(x)&&Math.abs(x)<=100)?v:undefined;}if(!/^[-+]?\d+$/.test(s))return undefined;const n=Number(s);if(!Number.isSafeInteger(n))return undefined;if(type==='bpm')return n===-1?null:(n>=0&&n<=300?n:undefined);return n>=0&&n<=10000000?n:undefined;}
 function ingest(type,text,ts=Date.now()){const value=parsePayload(type,text);if(value===undefined){if(type==='accel'&&text.trim()==='ERR'){state.accel=null;state.last.accel=0;renderValues();}return false;}state[type]=value;state.last[type]=ts;const arr=state.samples[type];arr.push({ts,v:value});while(arr.length&&arr[0].ts<ts-65000)arr.shift();if(arr.length>1200)arr.shift();const row={ts,source:state.source,type,bpm:fresh('bpm',ts)?state.bpm:null,ir:fresh('ir',ts)?state.ir:null,accel:fresh('accel',ts)?state.accel:null};state.records.push(row);if(state.records.length>50000)state.records.shift();renderValues();scheduleDraw();return true;}
 function cleanupBindings(){for(const [char,handler] of state.bindings)char.removeEventListener('characteristicvaluechanged',handler);state.bindings=[];}
@@ -89,6 +113,7 @@ const msg=error.name==='NotFoundError'?'Bạn chưa chọn thiết bị. Nhấn 
 notice(msg);location.hash='device';log(msg);
 }}
 document.querySelectorAll('.connect-action').forEach(b=>b.onclick=connectSensor);
+$('setOrigin').onclick=captureOrigin;$('clearOrigin').onclick=clearOrigin;
 function startDemo(){if(state.mode==='connected'||state.mode==='connecting'){toast('Hãy ngắt cảm biến trước khi thử demo.');return;}if(state.timer)return;notice();resetData();state.source='SIMULATED';state.started=Date.now();setMode('demo');let step=0;const tick=()=>{step++;const t=step/10;ingest('accel',`${(Math.sin(t)*.9).toFixed(2)},${(Math.cos(t*.8)*.5).toFixed(2)},${(9.78+Math.sin(t*1.6)*.22).toFixed(2)}`);if(step===1||step%5===0){ingest('bpm',String(Math.round(76+Math.sin(t*.3)*4)));ingest('ir',String(Math.round(85320+Math.sin(t*1.4)*2300)));}};tick();state.timer=setInterval(tick,100);log('Bắt đầu DEMO. Số đo được mô phỏng, không phải dữ liệu thật.');}
 function stopDemo(){clearInterval(state.timer);state.timer=null;setMode('offline');toast('Đã dừng demo. Dữ liệu vẫn có thể xuất CSV.');log('Dừng DEMO.');}
 $('demoHome').onclick=$('demoDevice').onclick=startDemo;$('stopDemo').onclick=stopDemo;

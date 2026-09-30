@@ -1,7 +1,7 @@
 // Runs the actual application BLE functions with a minimal transport/UI harness.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('public/app.js','utf8');
-const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','orientation','relativeMotion','repeatedVibration'];
+const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','orientation','relativeMotion','validAxisMap','applyAxisMap','repeatedVibration'];
 const connectStart=source.indexOf('async function connectSensor(){'),connectEnd=source.indexOf("\ndocument.querySelectorAll('.connect-action')",connectStart);
 const analyzeStart=source.indexOf('function analyzeMotion('),analyzeEnd=source.indexOf('\nfunction saveMotionConfig',analyzeStart);
 const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(analyzeStart,analyzeEnd)+'\n'+source.slice(connectStart,connectEnd);
@@ -9,7 +9,7 @@ const controls={};const context={Date,Math,Number,String,TextDecoder,Uint8Array,
 vm.runInContext(source.split('\n').slice(1,4).join('\n')+'\n'+`
 const document={getElementById:id=>(controls[id]??={})};
 const window={isSecureContext:true};const navigator={};const location={hash:''};const controls={};
-const motionConfig={enabled:false,impactThreshold:4,vibrationThreshold:.45},motionRuntime={samples:[],previous:null,lastImpact:0,lastVibration:0};
+let axisMap=['x','y','z'];const motionConfig={enabled:false,impactThreshold:4,vibrationThreshold:.45},motionRuntime={samples:[],previous:null,lastImpact:0,lastVibration:0};
 function recordMotionEvent(type,value,ts,extra={}){(controls.events??=[]).push({type,value,ts,...extra})}function renderValues(){}function scheduleDraw(){}function log(){}function notice(message=''){controls.notice=message}function toast(){}function setMode(mode){state.mode=mode}function stopDemo(){}function resetData(){state.bpm=state.ir=state.accel=null;state.last={bpm:0,accel:0,ir:0};state.records=[];state.samples={bpm:[],accel:[],ir:[]};motionRuntime.samples=[];motionRuntime.previous=null;}
 `+functions,context);
 const run=code=>vm.runInContext(code,context);
@@ -17,6 +17,7 @@ const run=code=>vm.runInContext(code,context);
 assert.equal(run("parsePayload('bpm','-1')"),null);
 for(const s of ['', ' ', 'NaN', '12x', '301','1.1'])assert.equal(run(`parsePayload('bpm',${JSON.stringify(s)})`),undefined);
 for(const s of [',1,2','1,,2','1,2','1,2,1000','ERR'])assert.equal(run(`parsePayload('accel',${JSON.stringify(s)})`),undefined);
+assert.equal(run("validAxisMap(['y','-x','z'])"),true);assert.equal(run("validAxisMap(['x','-x','z'])"),false);assert.equal(run("applyAxisMap([1,2,3],['y','-x','z']).join(',')"),'2,-1,3');
 run(`state.mode='connected';state.source='BLE';`);
 assert.equal(run("ingest('bpm','78')"),true);
 assert.equal(run("ingest('accel','0.12,-0.35,9.76')"),true);
@@ -39,5 +40,5 @@ await run('connectSensor()');assert.equal(run('state.mode'),'connected');run('di
 run(`let transientAttempts=0;d.gatt.connect=async()=>{transientAttempts++;if(transientAttempts<3)throw Error('Connection attempt failed');return controls.connectOk()}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('transientAttempts'),3);run('disconnect()');run('d.gatt.connect=controls.connectOk');
 run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('d.gatt.connected'),true);assert.equal(run('state.bindings.length'),2);assert.match(run('controls.notice'),/gia tốc/);run('disconnect()');
 run(`chars[UUID.bpm].startNotifications=chars[UUID.ir].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);assert.match(run('controls.notice'),/Không có kênh dữ liệu tương thích/);
-console.log('PASS: BLE UUIDs; payload validation; relative origin coordinates; impact and repeated-vibration detection; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
+console.log('PASS: BLE UUIDs; payload validation; axis remapping; relative origin coordinates; impact and repeated-vibration detection; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
 })().catch(e=>{console.error(e);process.exit(1)});

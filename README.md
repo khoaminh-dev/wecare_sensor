@@ -41,6 +41,7 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 - Màn hình chào WeCare với biểu tượng vector lấy cảm hứng từ ảnh mẫu.
 - Tổng quan: nhịp tim, gia tốc X/Y/Z, độ lớn gia tốc, IR, mô hình nghiêng 3D bằng CSS.
 - Đặt và lưu tư thế gốc; hiển thị gia tốc, pitch và roll tương đối, đồng thời hiệu chỉnh mô hình 3D theo mốc đã lưu.
+- Cấu hình hướng cảm biến bằng preset xoay 0°/90°/180°/270°, lật mặt hoặc ánh xạ từng trục mô hình sang ±X/±Y/±Z của MPU6050.
 - Cảnh báo chuyển động mạnh và rung lặp lại với công tắc, ngưỡng tùy chỉnh, rung/notification khi trình duyệt cho phép và nhật ký tối đa 100 sự kiện lưu cục bộ.
 - Biểu đồ 60 giây, thống kê, xuất CSV có cột nguồn dữ liệu và loại gói.
 - Demo được ghi nhãn rõ; không tự bật khi kết nối thất bại.

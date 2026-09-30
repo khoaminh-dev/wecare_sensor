@@ -1,0 +1,15 @@
+{
+  "name": "wecare-sensor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile-first WeCare Bluetooth sensor PWA",
+  "scripts": {
+    "dev": "node server.cjs",
+    "start": "node server.cjs",
+    "build": "node build.cjs",
+    "test": "node tests/protocol.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -43,7 +43,17 @@ chosen=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'VieGrand'}
 if(attempt!==state.epoch)return;
 state.device=chosen;chosen.addEventListener('gattserverdisconnected',onDisconnected);
 stage='kết nối Bluetooth';
-const server=await chosen.gatt.connect();
+let server=null,lastConnectError=null;
+for(let retry=1;retry<=3&&!server;retry++){
+try{server=chosen.gatt.connected?chosen.gatt:await chosen.gatt.connect();}
+catch(error){
+lastConnectError=error;
+log(`Kết nối Bluetooth lần ${retry}/3 thất bại: ${error.message||'lỗi không xác định'}.`);
+if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');
+if(retry<3)await new Promise(resolve=>setTimeout(resolve,retry*600));
+}
+}
+if(!server)throw new Error(`${lastConnectError?.message||'Thiết bị không phản hồi'}. Hãy đóng tab hoặc ứng dụng khác đang dùng cảm biến, khởi động lại mạch rồi thử lại.`);
 log('Bluetooth đã kết nối. Đang kiểm tra dịch vụ cảm biến...');
 stage='tìm dịch vụ cảm biến';
 const service=await server.getPrimaryService(UUID.service),failures=[];

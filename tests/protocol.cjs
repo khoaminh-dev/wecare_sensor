@@ -1,14 +1,16 @@
 // Runs the actual application BLE functions with a minimal transport/UI harness.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('public/app.js','utf8');
-const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','orientation','relativeMotion'];
+const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','orientation','relativeMotion','repeatedVibration'];
 const connectStart=source.indexOf('async function connectSensor(){'),connectEnd=source.indexOf("\ndocument.querySelectorAll('.connect-action')",connectStart);
-const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(connectStart,connectEnd);
+const analyzeStart=source.indexOf('function analyzeMotion('),analyzeEnd=source.indexOf('\nfunction saveMotionConfig',analyzeStart);
+const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(analyzeStart,analyzeEnd)+'\n'+source.slice(connectStart,connectEnd);
 const controls={};const context={Date,Math,Number,String,TextDecoder,Uint8Array,Event,EventTarget,console,setTimeout,clearTimeout};vm.createContext(context);
 vm.runInContext(source.split('\n').slice(1,4).join('\n')+'\n'+`
 const document={getElementById:id=>(controls[id]??={})};
 const window={isSecureContext:true};const navigator={};const location={hash:''};const controls={};
-function renderValues(){}function scheduleDraw(){}function log(){}function notice(message=''){controls.notice=message}function toast(){}function setMode(mode){state.mode=mode}function stopDemo(){}function resetData(){state.bpm=state.ir=state.accel=null;state.last={bpm:0,accel:0,ir:0};state.records=[];state.samples={bpm:[],accel:[],ir:[]};}
+const motionConfig={enabled:false,impactThreshold:4,vibrationThreshold:.45},motionRuntime={samples:[],previous:null,lastImpact:0,lastVibration:0};
+function recordMotionEvent(type,value,ts,extra={}){(controls.events??=[]).push({type,value,ts,...extra})}function renderValues(){}function scheduleDraw(){}function log(){}function notice(message=''){controls.notice=message}function toast(){}function setMode(mode){state.mode=mode}function stopDemo(){}function resetData(){state.bpm=state.ir=state.accel=null;state.last={bpm:0,accel:0,ir:0};state.records=[];state.samples={bpm:[],accel:[],ir:[]};motionRuntime.samples=[];motionRuntime.previous=null;}
 `+functions,context);
 const run=code=>vm.runInContext(code,context);
 (async()=>{
@@ -20,6 +22,8 @@ assert.equal(run("ingest('bpm','78')"),true);
 assert.equal(run("ingest('accel','0.12,-0.35,9.76')"),true);
 assert.equal(run('state.accel[2]'),9.76);
 run(`const originAccel=[.12,-.35,9.76],originAngle=orientation(originAccel),origin={accel:originAccel,...originAngle};`);assert.equal(run('relativeMotion(originAccel,origin).accel.every(value=>value===0)'),true);assert.equal(run('relativeMotion([1.12,-.35,9.76],origin).accel[0]'),1);
+run(`const oscillation=Array.from({length:21},(_,index)=>({ts:index*100,v:[index%2?1:-1,0,9.8]}));`);assert.equal(run('repeatedVibration(oscillation,.4).crossings'),20);assert.equal(run("repeatedVibration(oscillation.map(sample=>({...sample,v:[0,0,9.8]})),.4)"),null);
+run(`motionConfig.enabled=true;motionConfig.impactThreshold=2;motionRuntime.previous=null;controls.events=[];state.source='BLE';analyzeMotion([0,0,9.8],10000);analyzeMotion([3,0,9.8],10100);`);assert.equal(run('controls.events[0].type'),'impact');run('motionConfig.enabled=false');
 run("ingest('ir','85432')");assert.equal(run('state.records.length'),3);
 run("state.last.bpm=Date.now()-5000;ingest('ir','85500')");assert.equal(run('state.records.at(-1).bpm'),null);
 run("ingest('accel','ERR')");assert.equal(run('state.accel'),null);
@@ -35,5 +39,5 @@ await run('connectSensor()');assert.equal(run('state.mode'),'connected');run('di
 run(`let transientAttempts=0;d.gatt.connect=async()=>{transientAttempts++;if(transientAttempts<3)throw Error('Connection attempt failed');return controls.connectOk()}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('transientAttempts'),3);run('disconnect()');run('d.gatt.connect=controls.connectOk');
 run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('d.gatt.connected'),true);assert.equal(run('state.bindings.length'),2);assert.match(run('controls.notice'),/gia tốc/);run('disconnect()');
 run(`chars[UUID.bpm].startNotifications=chars[UUID.ir].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);assert.match(run('controls.notice'),/Không có kênh dữ liệu tương thích/);
-console.log('PASS: BLE UUIDs; payload validation; relative origin coordinates; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
+console.log('PASS: BLE UUIDs; payload validation; relative origin coordinates; impact and repeated-vibration detection; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -41,6 +41,7 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 - Màn hình chào WeCare với biểu tượng vector lấy cảm hứng từ ảnh mẫu.
 - Tổng quan: nhịp tim, gia tốc X/Y/Z, độ lớn gia tốc, IR, mô hình nghiêng 3D bằng CSS.
 - Đặt và lưu tư thế gốc; hiển thị gia tốc, pitch và roll tương đối, đồng thời hiệu chỉnh mô hình 3D theo mốc đã lưu.
+- Cảnh báo chuyển động mạnh và rung lặp lại với công tắc, ngưỡng tùy chỉnh, rung/notification khi trình duyệt cho phép và nhật ký tối đa 100 sự kiện lưu cục bộ.
 - Biểu đồ 60 giây, thống kê, xuất CSV có cột nguồn dữ liệu và loại gói.
 - Demo được ghi nhãn rõ; không tự bật khi kết nối thất bại.
 - Giao diện cài được ra màn hình chính, có service worker lưu giao diện ngoại tuyến.
@@ -61,6 +62,8 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 Tên Bluetooth vẫn là `VieGrand-Sensor` để tương thích firmware đang nạp; giao diện sản phẩm mang tên `wecare`. Bộ lọc cũng chấp nhận tên bắt đầu bằng `WeCare` hoặc `wecare`.
 
 Gia tốc có trọng trường. Góc nghiêng chỉ là ước tính từ accelerometer khi ít chuyển động, không có yaw. IR truyền ở 2 Hz không phải dạng sóng PPG độ phân giải cao. Bản này không suy diễn SpO₂, điện tim hoặc phát hiện té ngã. Số đo từ nguyên mẫu dùng tham khảo.
+
+Cảnh báo rung lặp lại chỉ phản ánh mẫu chuyển động đo được, không chẩn đoán Parkinson hay bệnh lý khác. Tần số gia tốc 10 Hz hiện tại chưa đủ để đánh giá đáng tin cậy run Parkinson thường nằm khoảng 4–6 Hz; firmware nên truyền accelerometer và gyroscope ở 50–100 Hz nếu cần phân tích sâu hơn. Web Bluetooth cần trang/PWA tiếp tục mở để ghi nhận và cảnh báo.
 
 ## Kiểm tra đã thực hiện
 

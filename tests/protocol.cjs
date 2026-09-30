@@ -1,13 +1,14 @@
 // Runs the actual application BLE functions with a minimal transport/UI harness.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('public/app.js','utf8');
-const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','connect'];
-const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`)||line.startsWith(`async function ${name}(`))).join('\n');
+const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected'];
+const connectStart=source.indexOf('async function connectSensor(){'),connectEnd=source.indexOf("\ndocument.querySelectorAll('.connect-action')",connectStart);
+const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(connectStart,connectEnd);
 const controls={};const context={Date,Math,Number,String,TextDecoder,Uint8Array,Event,EventTarget,console,setTimeout,clearTimeout};vm.createContext(context);
 vm.runInContext(source.split('\n').slice(1,4).join('\n')+'\n'+`
 const document={getElementById:id=>(controls[id]??={})};
 const window={isSecureContext:true};const navigator={};const location={hash:''};const controls={};
-function renderValues(){}function scheduleDraw(){}function log(){}function notice(){}function toast(){}function setMode(mode){state.mode=mode}function stopDemo(){}function resetData(){state.bpm=state.ir=state.accel=null;state.last={bpm:0,accel:0,ir:0};state.records=[];state.samples={bpm:[],accel:[],ir:[]};}
+function renderValues(){}function scheduleDraw(){}function log(){}function notice(message=''){controls.notice=message}function toast(){}function setMode(mode){state.mode=mode}function stopDemo(){}function resetData(){state.bpm=state.ir=state.accel=null;state.last={bpm:0,accel:0,ir:0};state.records=[];state.samples={bpm:[],accel:[],ir:[]};}
 `+functions,context);
 const run=code=>vm.runInContext(code,context);
 (async()=>{
@@ -26,10 +27,11 @@ const d=new EventTarget();d.name='VieGrand-Sensor';d.gatt={connected:false,conne
 navigator.bluetooth={requestDevice:async options=>{controls.options=options;return d}};state.mode='offline';`);
 // Provide host encoders used by the GATT double only.
 context.TextEncoder=TextEncoder;context.DataView=DataView;
-await run('connect()');assert.equal(run('state.mode'),'connected');assert.equal(run('state.bpm'),78);assert.equal(run('state.bindings.length'),3);assert.equal(run('controls.options.optionalServices[0]'),'37af0000-39a2-4fce-9c60-01ee00000000');
+await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('state.bpm'),78);assert.equal(run('state.bindings.length'),3);assert.equal(run('controls.options.optionalServices[0]'),'37af0000-39a2-4fce-9c60-01ee00000000');
 run(`chars[UUID.bpm].value=new DataView(new TextEncoder().encode('-1').buffer);chars[UUID.bpm].dispatchEvent(new Event('characteristicvaluechanged'));`);assert.equal(run('state.bpm'),null);
 run('d.gatt.disconnect()');assert.equal(run('state.mode'),'offline');assert.equal(run('state.bindings.length'),0);assert.equal(run("fresh('accel')"),false);
-await run('connect()');assert.equal(run('state.mode'),'connected');run('disconnect()');assert.equal(run('d.gatt.connected'),false);
-run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connect()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);
-console.log('PASS: BLE UUIDs; payload validation; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; partial subscription failure cleanup.');
+await run('connectSensor()');assert.equal(run('state.mode'),'connected');run('disconnect()');assert.equal(run('d.gatt.connected'),false);
+run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('d.gatt.connected'),true);assert.equal(run('state.bindings.length'),2);assert.match(run('controls.notice'),/gia tốc/);run('disconnect()');
+run(`chars[UUID.bpm].startNotifications=chars[UUID.ir].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);assert.match(run('controls.notice'),/Không có kênh dữ liệu tương thích/);
+console.log('PASS: BLE UUIDs; payload validation; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; partial channel support; total subscription failure cleanup.');
 })().catch(e=>{console.error(e);process.exit(1)});

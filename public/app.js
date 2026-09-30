@@ -30,8 +30,55 @@ function ingest(type,text,ts=Date.now()){const value=parsePayload(type,text);if(
 function cleanupBindings(){for(const [char,handler] of state.bindings)char.removeEventListener('characteristicvaluechanged',handler);state.bindings=[];}
 function disconnect(){state.epoch++;cleanupBindings();const d=state.device;state.device=null;if(d){d.removeEventListener('gattserverdisconnected',onDisconnected);if(d.gatt.connected)d.gatt.disconnect();}setMode('offline');log('Đã ngắt Bluetooth. Phiên đo vẫn có thể xuất CSV.');}
 function onDisconnected(){state.epoch++;cleanupBindings();if(state.device)state.device.removeEventListener('gattserverdisconnected',onDisconnected);state.device=null;setMode('offline');notice('Mất kết nối cảm biến. Nhấn Kết nối thiết bị để kết nối lại.');log('Bluetooth đã ngắt kết nối.');}
-async function connect(){if(state.mode==='connecting')return;if(state.mode==='connected'){disconnect();return;}if(!window.isSecureContext||!navigator.bluetooth){notice('Bluetooth chưa được hỗ trợ ở trình duyệt này. Dùng Chrome trên Android hoặc Chrome/Edge trên máy tính, mở trang qua HTTPS.');location.hash='device';return;}if(state.timer)stopDemo();notice();resetData();state.source='BLE';state.started=Date.now();setMode('connecting');const attempt=++state.epoch;let chosen=null;try{chosen=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'VieGrand'},{namePrefix:'wecare'},{namePrefix:'WeCare'}],optionalServices:[UUID.service]});if(attempt!==state.epoch)return;state.device=chosen;chosen.addEventListener('gattserverdisconnected',onDisconnected);const server=await chosen.gatt.connect();const service=await server.getPrimaryService(UUID.service);for(const type of ['bpm','accel','ir']){if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');const char=await service.getCharacteristic(UUID[type]);const handler=event=>{if(attempt!==state.epoch)return;const v=event.target.value;if(v)ingest(type,decoder.decode(new Uint8Array(v.buffer,v.byteOffset,v.byteLength)));};char.addEventListener('characteristicvaluechanged',handler);state.bindings.push([char,handler]);await char.startNotifications();try{const v=await char.readValue();if(attempt===state.epoch)ingest(type,decoder.decode(new Uint8Array(v.buffer,v.byteOffset,v.byteLength)));}catch{/* Notifications remain available without initial read. */}}if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');$('deviceName').textContent=chosen.name||'Cảm biến WeCare';setMode('connected');toast('Đã kết nối cảm biến');log('Đã bật nhận nhịp tim, gia tốc và IR.');}catch(error){cleanupBindings();if(chosen){chosen.removeEventListener('gattserverdisconnected',onDisconnected);if(chosen.gatt.connected)chosen.gatt.disconnect();}state.device=null;state.epoch++;setMode('offline');const msg=error.name==='NotFoundError'?'Chưa chọn thiết bị. Bạn có thể thử lại.':'Không thể kết nối: '+error.message;notice(msg);log(msg);}}
-document.querySelectorAll('.connect-action').forEach(b=>b.onclick=connect);
+async function connectSensor(){
+if(state.mode==='connecting')return;
+if(state.mode==='connected'){disconnect();return;}
+if(!window.isSecureContext||!navigator.bluetooth){notice('Bluetooth chưa được hỗ trợ ở trình duyệt này. Dùng Chrome trên Android hoặc Chrome/Edge trên máy tính, mở trang qua HTTPS.');location.hash='device';return;}
+if(state.timer)stopDemo();
+notice();resetData();state.source='BLE';state.started=Date.now();setMode('connecting');
+const attempt=++state.epoch,labels={bpm:'nhịp tim',accel:'gia tốc',ir:'hồng ngoại'};
+let chosen=null,stage='chọn thiết bị';
+try{
+chosen=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'VieGrand'},{namePrefix:'wecare'},{namePrefix:'WeCare'}],optionalServices:[UUID.service]});
+if(attempt!==state.epoch)return;
+state.device=chosen;chosen.addEventListener('gattserverdisconnected',onDisconnected);
+stage='kết nối Bluetooth';
+const server=await chosen.gatt.connect();
+log('Bluetooth đã kết nối. Đang kiểm tra dịch vụ cảm biến...');
+stage='tìm dịch vụ cảm biến';
+const service=await server.getPrimaryService(UUID.service),failures=[];
+for(const type of ['bpm','accel','ir']){
+if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');
+let char=null,handler=null;
+try{
+stage=`bật kênh ${labels[type]}`;
+char=await service.getCharacteristic(UUID[type]);
+handler=event=>{if(attempt!==state.epoch)return;const v=event.target.value;if(v)ingest(type,decoder.decode(new Uint8Array(v.buffer,v.byteOffset,v.byteLength)));};
+char.addEventListener('characteristicvaluechanged',handler);
+await char.startNotifications();
+state.bindings.push([char,handler]);
+try{const v=await char.readValue();if(attempt===state.epoch)ingest(type,decoder.decode(new Uint8Array(v.buffer,v.byteOffset,v.byteLength)));}catch{/* Notifications remain available without initial read. */}
+log(`Đã bật kênh ${labels[type]}.`);
+}catch(error){
+if(char&&handler)char.removeEventListener('characteristicvaluechanged',handler);
+failures.push(`${labels[type]} (${error.message||'không hỗ trợ Notify'})`);
+log(`Không bật được kênh ${labels[type]}: ${error.message||'lỗi không xác định'}.`);
+}
+}
+if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');
+if(!state.bindings.length)throw new Error(`Không có kênh dữ liệu tương thích. ${failures.join('; ')}`);
+$('deviceName').textContent=chosen.name||'Cảm biến WeCare';setMode('connected');
+if(failures.length)notice(`Đã kết nối, nhưng chưa nhận được ${failures.join('; ')}. Kiểm tra UUID và thuộc tính Notify trong firmware.`);else notice();
+toast(failures.length?'Đã kết nối một phần':'Đã kết nối cảm biến');
+log(`Kết nối sẵn sàng với ${state.bindings.length}/3 kênh dữ liệu.`);
+}catch(error){
+cleanupBindings();
+if(chosen){chosen.removeEventListener('gattserverdisconnected',onDisconnected);if(chosen.gatt.connected)chosen.gatt.disconnect();}
+state.device=null;state.epoch++;setMode('offline');
+const msg=error.name==='NotFoundError'?'Bạn chưa chọn thiết bị. Nhấn Kết nối khi muốn thử lại.':`Không thể kết nối tại bước ${stage}: ${error.message||'kiểm tra nguồn và thử lại.'}`;
+notice(msg);location.hash='device';log(msg);
+}}
+document.querySelectorAll('.connect-action').forEach(b=>b.onclick=connectSensor);
 function startDemo(){if(state.mode==='connected'||state.mode==='connecting'){toast('Hãy ngắt cảm biến trước khi thử demo.');return;}if(state.timer)return;notice();resetData();state.source='SIMULATED';state.started=Date.now();setMode('demo');let step=0;const tick=()=>{step++;const t=step/10;ingest('accel',`${(Math.sin(t)*.9).toFixed(2)},${(Math.cos(t*.8)*.5).toFixed(2)},${(9.78+Math.sin(t*1.6)*.22).toFixed(2)}`);if(step===1||step%5===0){ingest('bpm',String(Math.round(76+Math.sin(t*.3)*4)));ingest('ir',String(Math.round(85320+Math.sin(t*1.4)*2300)));}};tick();state.timer=setInterval(tick,100);log('Bắt đầu DEMO. Số đo được mô phỏng, không phải dữ liệu thật.');}
 function stopDemo(){clearInterval(state.timer);state.timer=null;setMode('offline');toast('Đã dừng demo. Dữ liệu vẫn có thể xuất CSV.');log('Dừng DEMO.');}
 $('demoHome').onclick=$('demoDevice').onclick=startDemo;$('stopDemo').onclick=stopDemo;

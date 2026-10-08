@@ -40,6 +40,7 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 
 - Màn hình chào WeCare với biểu tượng vector lấy cảm hứng từ ảnh mẫu.
 - Tổng quan: nhịp tim, gia tốc X/Y/Z, độ lớn gia tốc, IR và biểu đồ chuyển động ba trục trong 60 giây.
+- Tab WeCare Risk Score cập nhật trực tiếp từ 30 giây dữ liệu gia tốc, hiển thị xu hướng, độ tin cậy và các yếu tố đóng góp; đây là chỉ báo theo dõi của sản phẩm, không phải thang điểm chẩn đoán Parkinson.
 - Đặt và lưu tọa độ gốc; hiển thị số liệu và biểu đồ gia tốc tương đối theo mốc đã lưu.
 - Cấu hình hướng cảm biến bằng preset xoay 0°/90°/180°/270°, lật mặt hoặc ánh xạ từng trục mô hình sang ±X/±Y/±Z của MPU6050.
 - Cảnh báo chuyển động mạnh và rung lặp lại với công tắc, ngưỡng tùy chỉnh, rung/notification khi trình duyệt cho phép và nhật ký tối đa 100 sự kiện lưu cục bộ.

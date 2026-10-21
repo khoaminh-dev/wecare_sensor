@@ -41,6 +41,10 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 - Màn hình chào WeCare với biểu tượng vector lấy cảm hứng từ ảnh mẫu.
 - Tổng quan: nhịp tim, gia tốc X/Y/Z, độ lớn gia tốc, IR và biểu đồ chuyển động ba trục trong 60 giây.
 - Tab WeCare Risk Score cập nhật trực tiếp từ 30 giây dữ liệu gia tốc, hiển thị xu hướng, độ tin cậy và các yếu tố đóng góp; đây là chỉ báo theo dõi của sản phẩm, không phải thang điểm chẩn đoán Parkinson.
+- Bộ 6 bài kiểm tra vận động: nghỉ tay, giữ tay phía trước, chạm ngón tay, luân phiên hai bên, đứng lên–ngồi xuống và đi bộ tại chỗ; kết quả được chấm điểm và lưu vào hồ sơ cục bộ.
+- Hồ sơ vận động có lịch sử, điểm gần nhất, chuỗi ngày theo dõi và xuất dữ liệu JSON.
+- Đăng nhập bằng mã xác thực 6 chữ số cho prototype; mã được tạo cục bộ và hiển thị trong giao diện, chưa kết nối cổng SMS thật.
+- Nhắc lịch uống thuốc theo giờ và ngày trong tuần, đánh dấu đã uống, bật/tắt, sửa/xóa lịch và dùng Notification API khi ứng dụng đang mở.
 - Đặt và lưu tọa độ gốc; hiển thị số liệu và biểu đồ gia tốc tương đối theo mốc đã lưu.
 - Cấu hình hướng cảm biến bằng preset xoay 0°/90°/180°/270°, lật mặt hoặc ánh xạ từng trục mô hình sang ±X/±Y/±Z của MPU6050.
 - Cảnh báo chuyển động mạnh và rung lặp lại với công tắc, ngưỡng tùy chỉnh, rung/notification khi trình duyệt cho phép và nhật ký tối đa 100 sự kiện lưu cục bộ.
@@ -49,6 +53,7 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 - Giao diện cài được ra màn hình chính, có service worker lưu giao diện ngoại tuyến.
 - Nút toàn màn hình và tùy chọn giữ màn hình sáng khi hỗ trợ.
 - Dữ liệu chỉ nằm trong RAM của tab; không gửi dữ liệu cảm biến lên máy chủ.
+- Hồ sơ vận động, phiên đăng nhập prototype và lịch thuốc được lưu bằng localStorage trên thiết bị; xóa dữ liệu trang web sẽ xóa các thông tin này.
 - Lưu tối đa 50.000 sự kiện; CSV có dòng cho từng gói BLE. Tải lại trang hoặc bắt đầu kết nối/demo mới sẽ xóa phiên cũ; hãy xuất CSV trước.
 - Số đo cũ hơn 3,5 giây không còn hiển thị như số đo trực tiếp. Biểu đồ để trống khoảng gián đoạn >1,5 giây.
 

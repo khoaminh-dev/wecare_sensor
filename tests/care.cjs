@@ -64,7 +64,7 @@ const {chromium}=require('playwright');
   await page.reload({waitUntil:'networkidle'});
   assert.equal(await page.locator('.med-item').count(),1);
 
-  for(const width of [320,390,768,1440]){
+  for(const width of [320,390,768,820,1024,1440,1920]){
     await page.setViewportSize({width,height:900});
     for(const section of ['tests','medication','profile']){
       await page.goto(`http://localhost:3000/#${section}`,{waitUntil:'networkidle'});

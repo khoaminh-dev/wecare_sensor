@@ -49,6 +49,7 @@ iPhone/iPad có thể xem giao diện và demo; Web Bluetooth không được h�
 - Cấu hình hướng cảm biến bằng preset xoay 0°/90°/180°/270°, lật mặt hoặc ánh xạ từng trục mô hình sang ±X/±Y/±Z của MPU6050.
 - Cảnh báo chuyển động mạnh và rung lặp lại với công tắc, ngưỡng tùy chỉnh, rung/notification khi trình duyệt cho phép và nhật ký tối đa 100 sự kiện lưu cục bộ.
 - Biểu đồ 60 giây, thống kê, xuất CSV có cột nguồn dữ liệu và loại gói.
+- Chế độ chẩn đoán BLE tự động liệt kê characteristic trong service, bắt dữ liệu Read/Notify trước khi phân loại và xuất JSON thô gồm UUID, HEX, UTF-8, Int16 và Float32 để dò ngược firmware.
 - Demo được ghi nhãn rõ; không tự bật khi kết nối thất bại.
 - Giao diện cài được ra màn hình chính, có service worker lưu giao diện ngoại tuyến.
 - Nút toàn màn hình và tùy chọn giữ màn hình sáng khi hỗ trợ.

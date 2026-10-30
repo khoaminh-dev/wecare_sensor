@@ -4,8 +4,9 @@ const source=fs.readFileSync('public/app.js','utf8');
 const names=['fresh','parsePayload','ingest','cleanupBindings','disconnect','onDisconnected','orientation','relativeMotion','validAxisMap','applyAxisMap','repeatedVibration'];
 const connectStart=source.indexOf('async function connectSensor(){'),connectEnd=source.indexOf("\ndocument.querySelectorAll('.connect-action')",connectStart);
 const analyzeStart=source.indexOf('function analyzeMotion('),analyzeEnd=source.indexOf('\nfunction saveMotionConfig',analyzeStart);
-const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(analyzeStart,analyzeEnd)+'\n'+source.slice(connectStart,connectEnd);
-const controls={};const context={Date,Math,Number,String,TextDecoder,Uint8Array,Event,EventTarget,console,setTimeout,clearTimeout};vm.createContext(context);
+const bleStart=source.indexOf('function bleType('),bleEnd=source.indexOf('\nfunction setMode(',bleStart);
+const functions=names.map(name=>source.split('\n').find(line=>line.startsWith(`function ${name}(`))).join('\n')+'\n'+source.slice(bleStart,bleEnd)+'\n'+source.slice(analyzeStart,analyzeEnd)+'\n'+source.slice(connectStart,connectEnd);
+const controls={};const context={Date,Math,Number,String,TextDecoder,Uint8Array,Event,EventTarget,console,setTimeout,clearTimeout,requestAnimationFrame:()=>0};vm.createContext(context);
 vm.runInContext(source.split('\n').slice(1,4).join('\n')+'\n'+`
 const document={getElementById:id=>(controls[id]??={})};
 const window={isSecureContext:true};const navigator={};const location={hash:''};const controls={};
@@ -28,17 +29,19 @@ run(`motionConfig.enabled=true;motionConfig.impactThreshold=2;motionRuntime.prev
 run("ingest('ir','85432')");assert.equal(run('state.records.length'),3);
 run("state.last.bpm=Date.now()-5000;ingest('ir','85500')");assert.equal(run('state.records.at(-1).bpm'),null);
 run("ingest('accel','ERR')");assert.equal(run('state.accel'),null);
-run(`const chars={};for(let i=1;i<=3;i++){const c=new EventTarget();c.startNotifications=async()=>c;c.readValue=async()=>new DataView(new TextEncoder().encode(i===1?'78':i===2?'0.12,-0.35,9.76':'85432').buffer);chars[UUID[['bpm','accel','ir'][i-1]]]=c;}
-const d=new EventTarget();d.name='VieGrand-Sensor';const connectOk=async()=>{d.gatt.connected=true;return{getPrimaryService:async()=>({getCharacteristic:async id=>chars[id]})}};d.gatt={connected:false,connect:connectOk,disconnect:()=>{d.gatt.connected=false;d.dispatchEvent(new Event('gattserverdisconnected'));}};controls.connectOk=connectOk;
+run(`const chars={};for(let i=1;i<=3;i++){const c=new EventTarget(),type=['bpm','accel','ir'][i-1];c.uuid=UUID[type];c.properties={read:true,notify:true};c.startNotifications=async()=>c;c.readValue=async()=>new DataView(new TextEncoder().encode(i===1?'78':i===2?'0.12,-0.35,9.76':'85432').buffer);chars[UUID[type]]=c;}
+const unknown=new EventTarget();unknown.uuid='37af0099-39a2-4fce-9c60-01ee00000000';unknown.properties={read:true,notify:true};unknown.startNotifications=async()=>unknown;unknown.readValue=async()=>new DataView(new TextEncoder().encode('X=12;Y=-35;Z=976').buffer);let includeUnknown=true;
+const d=new EventTarget();d.name='VieGrand-Sensor';const connectOk=async()=>{d.gatt.connected=true;return{getPrimaryService:async()=>({getCharacteristics:async()=>includeUnknown?[...Object.values(chars),unknown]:Object.values(chars),getCharacteristic:async id=>chars[id]})}};d.gatt={connected:false,connect:connectOk,disconnect:()=>{d.gatt.connected=false;d.dispatchEvent(new Event('gattserverdisconnected'));}};controls.connectOk=connectOk;
 navigator.bluetooth={requestDevice:async options=>{controls.options=options;return d}};state.mode='offline';`);
 // Provide host encoders used by the GATT double only.
 context.TextEncoder=TextEncoder;context.DataView=DataView;
-await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('state.bpm'),78);assert.equal(run('state.bindings.length'),3);assert.equal(run('controls.options.optionalServices[0]'),'37af0000-39a2-4fce-9c60-01ee00000000');
+await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('state.bpm'),78);assert.equal(run('state.bindings.length'),4);assert.equal(run('controls.options.optionalServices[0]'),'37af0000-39a2-4fce-9c60-01ee00000000');
+assert.equal(run('state.bleCharacteristics.length'),4);assert.equal(run('state.blePackets.length'),4);assert.equal(run("state.blePackets.find(packet=>packet.type==='accel').utf8"),'0.12,-0.35,9.76');assert.equal(run("state.blePackets.find(packet=>packet.type==='accel').accepted"),true);assert.equal(run("state.blePackets.find(packet=>packet.uuid==='37af0099-39a2-4fce-9c60-01ee00000000').accepted"),null);
 run(`chars[UUID.bpm].value=new DataView(new TextEncoder().encode('-1').buffer);chars[UUID.bpm].dispatchEvent(new Event('characteristicvaluechanged'));`);assert.equal(run('state.bpm'),null);
 run('d.gatt.disconnect()');assert.equal(run('state.mode'),'offline');assert.equal(run('state.bindings.length'),0);assert.equal(run("fresh('accel')"),false);
 await run('connectSensor()');assert.equal(run('state.mode'),'connected');run('disconnect()');assert.equal(run('d.gatt.connected'),false);
 run(`let transientAttempts=0;d.gatt.connect=async()=>{transientAttempts++;if(transientAttempts<3)throw Error('Connection attempt failed');return controls.connectOk()}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('transientAttempts'),3);run('disconnect()');run('d.gatt.connect=controls.connectOk');
-run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('d.gatt.connected'),true);assert.equal(run('state.bindings.length'),2);assert.match(run('controls.notice'),/gia tốc/);run('disconnect()');
-run(`chars[UUID.bpm].startNotifications=chars[UUID.ir].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);assert.match(run('controls.notice'),/Không có kênh dữ liệu tương thích/);
+run(`chars[UUID.accel].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'connected');assert.equal(run('d.gatt.connected'),true);assert.equal(run('state.bindings.length'),3);assert.match(run('controls.notice'),/gia tốc/);run('disconnect()');
+run(`includeUnknown=false;chars[UUID.bpm].startNotifications=chars[UUID.ir].startNotifications=async()=>{throw Error('subscription failed')}`);await run('connectSensor()');assert.equal(run('state.mode'),'offline');assert.equal(run('d.gatt.connected'),false);assert.equal(run('state.bindings.length'),0);assert.match(run('controls.notice'),/Không có kênh dữ liệu tương thích/);
 console.log('PASS: BLE UUIDs; payload validation; axis remapping; relative origin coordinates; impact and repeated-vibration detection; BPM -1; fresh/stale CSV values; ERR IMU; reads; notifications; disconnect/reconnect; transient GATT retry; partial channel support; total subscription failure cleanup.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -1,7 +1,7 @@
 'use strict';
 const UUID={service:'37af0000-39a2-4fce-9c60-01ee00000000',bpm:'37af0001-39a2-4fce-9c60-01ee00000000',accel:'37af0002-39a2-4fce-9c60-01ee00000000',ir:'37af0003-39a2-4fce-9c60-01ee00000000'};
 const $=id=>document.getElementById(id),decoder=new TextDecoder();
-const state={mode:'offline',source:null,device:null,bindings:[],epoch:0,timer:null,started:0,bpm:null,accel:null,ir:null,last:{bpm:0,accel:0,ir:0},samples:{bpm:[],accel:[],ir:[]},records:[],riskHistory:[],lastRiskAt:0,chart:'bpm',drawPending:false,wake:null,install:null,origin:null};
+const state={mode:'offline',source:null,device:null,bindings:[],epoch:0,timer:null,started:0,bpm:null,accel:null,ir:null,last:{bpm:0,accel:0,ir:0},samples:{bpm:[],accel:[],ir:[]},records:[],riskHistory:[],lastRiskAt:0,chart:'bpm',drawPending:false,wake:null,install:null,origin:null,blePackets:[],bleCharacteristics:[],bleSequence:0,bleRenderPending:false};
 const navigation=[['home','home','Tổng quan'],['tests','tests','Kiểm tra'],['risk','risk','Risk Score'],['medication','pill','Nhắc thuốc'],['profile','user','Hồ sơ'],['trends','chart','Biểu đồ'],['device','device','Thiết bị'],['origin','origin','Đặt gốc'],['settings','settings','Cài đặt']];
 const mobileNavigation=new Set(['home','tests','risk','medication','profile']);
 document.querySelector('.side-nav').innerHTML=navigation.map(([id,icon,title])=>`<a class="nav-item" href="#${id}" data-page="${id}"><svg><use href="#i-${icon}"/></svg><span>${title}</span></a>`).join('');
@@ -30,6 +30,23 @@ function notice(message=''){ $('notice').textContent=message;$('notice').hidden=
 function showDialog(html){$('dialogContent').innerHTML=html;$('dialog').showModal();}
 document.querySelectorAll('#dialog .dialog-close').forEach(b=>b.onclick=()=>$('dialog').close());
 $('dialog').addEventListener('click',e=>{if(e.target===$('dialog')){const r=$('dialog').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('dialog').close();}});
+function bleType(uuid){return Object.entries(UUID).find(([key,value])=>key!=='service'&&value===uuid)?.[0]||null;}
+function bleProperties(char){const p=char.properties||{};return['read','notify','indicate','write','writeWithoutResponse'].filter(key=>p[key]);}
+function bleNumberViews(bytes){const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),result={};if(bytes.byteLength>=2&&bytes.byteLength%2===0){result.int16LE=[];result.int16BE=[];for(let offset=0;offset<bytes.byteLength;offset+=2){result.int16LE.push(view.getInt16(offset,true));result.int16BE.push(view.getInt16(offset,false));}}if(bytes.byteLength>=4&&bytes.byteLength%4===0){result.float32LE=[];result.float32BE=[];for(let offset=0;offset<bytes.byteLength;offset+=4){const le=view.getFloat32(offset,true),be=view.getFloat32(offset,false);result.float32LE.push(Number.isFinite(le)?Number(le.toPrecision(7)):String(le));result.float32BE.push(Number.isFinite(be)?Number(be.toPrecision(7)):String(be));}}return result;}
+function printableBleText(text){return text.replace(/[\u0000-\u001f\u007f-\u009f]/g,char=>`\\x${char.charCodeAt(0).toString(16).padStart(2,'0')}`);}
+function queueBleCaptureRender(){if(state.bleRenderPending)return;state.bleRenderPending=true;requestAnimationFrame(()=>{state.bleRenderPending=false;renderBleCapture();});}
+function captureBlePacket(uuid,value,via='notify'){
+const bytes=new Uint8Array(value.buffer,value.byteOffset,value.byteLength),utf8=decoder.decode(bytes),packet={sequence:++state.bleSequence,ts:Date.now(),iso:new Date().toISOString(),uuid,type:bleType(uuid),via,byteLength:bytes.byteLength,hex:[...bytes].map(byte=>byte.toString(16).padStart(2,'0')).join(' ').toUpperCase(),utf8,...bleNumberViews(bytes),accepted:null};
+state.blePackets.push(packet);if(state.blePackets.length>10000)state.blePackets.shift();queueBleCaptureRender();return packet;
+}
+function rememberBleCharacteristic(char,label=null){const uuid=char.uuid||UUID[label],properties=bleProperties(char),existing=state.bleCharacteristics.find(item=>item.uuid===uuid);if(existing){existing.properties=[...new Set([...existing.properties,...properties])];if(label)existing.type=label;}else state.bleCharacteristics.push({uuid,type:label||bleType(uuid),properties});queueBleCaptureRender();}
+function renderBleCapture(){
+const packets=state.blePackets,rejected=packets.filter(packet=>packet.accepted===false).length;$('blePacketCount').textContent=packets.length.toLocaleString('vi-VN');$('bleCharacteristicCount').textContent=state.bleCharacteristics.length.toLocaleString('vi-VN');$('bleRejectedCount').textContent=rejected.toLocaleString('vi-VN');$('bleCaptureStatus').textContent=state.mode==='connected'?'ĐANG BẮT GÓI':packets.length?'ĐÃ DỪNG · CÓ THỂ TẢI':'CHỜ KẾT NỐI';$('bleCaptureStatus').classList.toggle('active',state.mode==='connected');
+const characteristicList=$('bleCharacteristicList');characteristicList.textContent='';if(!state.bleCharacteristics.length){const p=document.createElement('p');p.textContent='Kết nối thiết bị để quét characteristic trong service cảm biến.';characteristicList.append(p);}else for(const item of state.bleCharacteristics){const row=document.createElement('div'),name=document.createElement('b'),detail=document.createElement('span');name.textContent=(item.type?item.type.toUpperCase()+' · ':'')+item.uuid;detail.textContent=item.properties.length?item.properties.join(' · ').toUpperCase():'KHÔNG CÔNG BỐ THUỘC TÍNH';row.append(name,detail);characteristicList.append(row);}
+const packetRows=$('blePacketRows');packetRows.textContent='';if(!packets.length){const p=document.createElement('p');p.textContent='Chưa nhận được gói BLE.';packetRows.append(p);}else for(const packet of packets.slice(-40).reverse()){const row=document.createElement('div'),head=document.createElement('div'),meta=document.createElement('span'),status=document.createElement('b'),hex=document.createElement('code'),text=document.createElement('code');meta.textContent=`#${packet.sequence} · ${new Date(packet.ts).toLocaleTimeString('vi-VN')} · ${(packet.type||packet.uuid)} · ${packet.via} · ${packet.byteLength} byte`;status.textContent=packet.accepted===true?'ĐÃ NHẬN':packet.accepted===false?'BỊ TỪ CHỐI':'GÓI THÔ';status.className=packet.accepted===true?'accepted':packet.accepted===false?'rejected':'raw';head.append(meta,status);hex.textContent='HEX  '+(packet.hex||'(rỗng)');text.textContent='UTF-8  '+(printableBleText(packet.utf8)||'(rỗng)');row.append(head,hex,text);packetRows.append(row);}
+}
+function resetBleCapture(){state.blePackets=[];state.bleCharacteristics=[];state.bleSequence=0;queueBleCaptureRender();}
+async function bindUnknownBleCharacteristics(characteristics,attempt){let accessible=0;for(const char of characteristics){const type=bleType(char.uuid);if(type)continue;let opened=false;rememberBleCharacteristic(char);if(char.properties?.read){try{const value=await char.readValue();if(attempt!==state.epoch)return accessible;captureBlePacket(char.uuid,value,'read');opened=true;}catch(error){log(`Không đọc được characteristic ${char.uuid}: ${error.message||'lỗi không xác định'}.`);}}if(char.properties?.notify||char.properties?.indicate){let handler=null;try{handler=event=>{if(attempt!==state.epoch)return;const value=event.target.value;if(value)captureBlePacket(char.uuid,value,'notify');};char.addEventListener('characteristicvaluechanged',handler);await char.startNotifications();state.bindings.push([char,handler]);opened=true;log(`Đang bắt gói characteristic chưa ánh xạ ${char.uuid}.`);}catch(error){if(handler)char.removeEventListener('characteristicvaluechanged',handler);log(`Không bật được characteristic ${char.uuid}: ${error.message||'không hỗ trợ Notify'}.`);}}if(opened)accessible++;}return accessible;}
 function setMode(mode){state.mode=mode;const text={offline:'Chưa kết nối',connecting:'Đang kết nối',connected:'Đã kết nối',demo:'Chế độ demo'}[mode];$('statusBadge').innerHTML='<i></i>'+text;$('statusBadge').className='badge '+(mode==='connected'?'online':mode==='demo'?'demo':'');$('deviceBadge').textContent=text;$('deviceBadge').className=$('statusBadge').className;$('demoBanner').hidden=mode!=='demo';for(const button of document.querySelectorAll('.connect-action')){button.disabled=mode==='connecting';button.querySelector('span').textContent=mode==='connected'?'Ngắt kết nối':mode==='connecting'?'Đang kết nối…':'Kết nối thiết bị';}$('heroText').innerHTML=mode==='connected'?'Cảm biến đã sẵn sàng.<br>Cùng lắng nghe cơ thể bạn.':mode==='demo'?'Bạn đang khám phá bản demo.<br>Tất cả số đo đều được mô phỏng.':'Kết nối cảm biến để bắt đầu<br>lắng nghe nhịp điệu của bạn.';$('demoHome').hidden=mode==='connected'||mode==='connecting'||mode==='demo';$('demoDevice').hidden=mode==='connected'||mode==='connecting';syncWake();renderValues();}
 function resetData(){state.bpm=state.accel=state.ir=null;state.last={bpm:0,accel:0,ir:0};state.samples={bpm:[],accel:[],ir:[]};state.records=[];state.riskHistory=[];state.lastRiskAt=0;motionRuntime.samples=[];motionRuntime.previous=null;$('sensor3d').style.transform='rotateX(0deg) rotateY(0deg) rotateZ(0deg)';renderValues();scheduleDraw();}
 function fresh(type,now=Date.now()){return (state.mode==='demo'||state.mode==='connected'||state.mode==='connecting')&&!!state.last[type]&&now-state.last[type]<3500;}
@@ -109,7 +126,7 @@ if(state.mode==='connecting')return;
 if(state.mode==='connected'){disconnect();return;}
 if(!window.isSecureContext||!navigator.bluetooth){notice('Bluetooth chưa được hỗ trợ ở trình duyệt này. Dùng Chrome trên Android hoặc Chrome/Edge trên máy tính, mở trang qua HTTPS.');location.hash='device';return;}
 if(state.timer)stopDemo();
-notice();resetData();state.source='BLE';state.started=Date.now();setMode('connecting');
+notice();resetData();resetBleCapture();state.source='BLE';state.started=Date.now();setMode('connecting');
 const attempt=++state.epoch,labels={bpm:'nhịp tim',accel:'gia tốc',ir:'hồng ngoại'};
 let chosen=null,stage='chọn thiết bị';
 try{
@@ -130,18 +147,21 @@ if(retry<3)await new Promise(resolve=>setTimeout(resolve,retry*600));
 if(!server)throw new Error(`${lastConnectError?.message||'Thiết bị không phản hồi'}. Hãy đóng tab hoặc ứng dụng khác đang dùng cảm biến, khởi động lại mạch rồi thử lại.`);
 log('Bluetooth đã kết nối. Đang kiểm tra dịch vụ cảm biến...');
 stage='tìm dịch vụ cảm biến';
-const service=await server.getPrimaryService(UUID.service),failures=[];
+const service=await server.getPrimaryService(UUID.service),failures=[];let discovered=[];
+try{if(typeof service.getCharacteristics==='function')discovered=await service.getCharacteristics();for(const char of discovered)rememberBleCharacteristic(char);}catch(error){log(`Không thể liệt kê toàn bộ characteristic: ${error.message||'lỗi không xác định'}.`);}
+let knownBindings=0;
 for(const type of ['bpm','accel','ir']){
 if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');
 let char=null,handler=null;
 try{
 stage=`bật kênh ${labels[type]}`;
 char=await service.getCharacteristic(UUID[type]);
-handler=event=>{if(attempt!==state.epoch)return;const v=event.target.value;if(v)ingest(type,decoder.decode(new Uint8Array(v.buffer,v.byteOffset,v.byteLength)));};
+rememberBleCharacteristic(char,type);
+handler=event=>{if(attempt!==state.epoch)return;const v=event.target.value;if(v){const packet=captureBlePacket(char.uuid||UUID[type],v,'notify');packet.accepted=ingest(type,packet.utf8);queueBleCaptureRender();}};
 char.addEventListener('characteristicvaluechanged',handler);
 await char.startNotifications();
-state.bindings.push([char,handler]);
-try{const v=await char.readValue();if(attempt===state.epoch)ingest(type,decoder.decode(new Uint8Array(v.buffer,v.byteOffset,v.byteLength)));}catch{/* Notifications remain available without initial read. */}
+state.bindings.push([char,handler]);knownBindings++;
+try{const v=await char.readValue();if(attempt===state.epoch){const packet=captureBlePacket(char.uuid||UUID[type],v,'read');packet.accepted=ingest(type,packet.utf8);queueBleCaptureRender();}}catch{/* Notifications remain available without initial read. */}
 log(`Đã bật kênh ${labels[type]}.`);
 }catch(error){
 if(char&&handler)char.removeEventListener('characteristicvaluechanged',handler);
@@ -149,12 +169,13 @@ failures.push(`${labels[type]} (${error.message||'không hỗ trợ Notify'})`);
 log(`Không bật được kênh ${labels[type]}: ${error.message||'lỗi không xác định'}.`);
 }
 }
+const diagnosticChannels=await bindUnknownBleCharacteristics(discovered,attempt);
 if(attempt!==state.epoch)throw new Error('Kết nối đã bị gián đoạn.');
-if(!state.bindings.length)throw new Error(`Không có kênh dữ liệu tương thích. ${failures.join('; ')}`);
+if(!knownBindings&&!diagnosticChannels)throw new Error(`Không có kênh dữ liệu tương thích. ${failures.join('; ')}`);
 $('deviceName').textContent=chosen.name||'Cảm biến WeCare';setMode('connected');
 if(failures.length)notice(`Đã kết nối, nhưng chưa nhận được ${failures.join('; ')}. Kiểm tra UUID và thuộc tính Notify trong firmware.`);else notice();
 toast(failures.length?'Đã kết nối một phần':'Đã kết nối cảm biến');
-log(`Kết nối sẵn sàng với ${state.bindings.length}/3 kênh dữ liệu.`);
+log(`Kết nối sẵn sàng với ${knownBindings}/3 kênh đã biết${diagnosticChannels?` và ${diagnosticChannels} kênh chẩn đoán`:''}.`);
 }catch(error){
 cleanupBindings();
 if(chosen){chosen.removeEventListener('gattserverdisconnected',onDisconnected);if(chosen.gatt.connected)chosen.gatt.disconnect();}
@@ -194,7 +215,9 @@ $('clearMotionEvents').onclick=()=>{motionEvents=[];storageRemove('wecare-motion
 $('axisX').onchange=event=>changeAxis(0,event.target.value);$('axisY').onchange=event=>changeAxis(1,event.target.value);$('axisZ').onchange=event=>changeAxis(2,event.target.value);
 document.querySelectorAll('[data-axis-preset]').forEach(button=>button.onclick=()=>setAxisMap(button.dataset.axisPreset.split(',')));
 $('resetAxisMap').onclick=()=>setAxisMap(['x','y','z']);
+$('clearBleCapture').onclick=()=>{resetBleCapture();toast('Đã xóa dữ liệu BLE thô.');};
+$('exportBleCapture').onclick=()=>{if(!state.blePackets.length){toast('Chưa có gói BLE thô để tải.');return;}const payload={exportedAt:new Date().toISOString(),device:state.device?.name||$('deviceName').textContent,service:UUID.service,characteristics:state.bleCharacteristics,packets:state.blePackets},blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`wecare_ble_raw_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);toast('Đã tải dữ liệu BLE thô.');};
 $('compatibility').textContent=navigator.bluetooth&&window.isSecureContext?'Trình duyệt có Web Bluetooth. Giữ trang đang mở để nhận dữ liệu liên tục; hệ điều hành có thể tạm dừng khi khóa màn hình.':'Trình duyệt này chưa hỗ trợ Web Bluetooth. Hãy dùng Chrome trên Android hoặc Chrome/Edge trên máy tính. Bạn vẫn có thể trải nghiệm bản demo.';
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>log('Chưa thể lưu giao diện ngoại tuyến.')));
 window.addEventListener('pagehide',()=>{if(state.device?.gatt.connected)state.device.gatt.disconnect();});
-setInterval(()=>{renderValues();scheduleDraw();},1000);renderAxisSettings();renderMotionSettings();setMode('offline');log('Sẵn sàng kết nối cảm biến.');scheduleDraw();
+setInterval(()=>{renderValues();scheduleDraw();},1000);renderAxisSettings();renderMotionSettings();renderBleCapture();setMode('offline');log('Sẵn sàng kết nối cảm biến.');scheduleDraw();
